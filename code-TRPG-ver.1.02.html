@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoC キャラクター管理ツール (KP計算・ダイス共有版)</title>
+    <!-- アカウント不要でリアルタイム通信するためのPeerJS部品 -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            background-color: #f1f5f9;
+            color: #334155;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 0 0 12px 12px;
+            padding: 30px;
+            width: 100%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            box-sizing: border-box;
+            transition: max-width 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
+
+        .container.isolated { border-radius: 12px; margin-top: 60px; }
+        .size-small { max-width: 450px; }
+        .size-large { max-width: 900px; }
+
+        .top-nav-bar {
+            width: 100%;
+            display: flex;
+            gap: 2px;
+            margin-top: 40px;
+            margin-bottom: -1px;
+            position: relative;
+            z-index: 2;
+            transition: max-width 0.3s ease;
+        }
+        .btn-nav {
+            flex: 1;
+            padding: 12px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border: 1px solid #e2e8f0;
+            border-bottom: none;
+            background-color: #e2e8f0;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .btn-nav.active {
+            background-color: #ffffff;
+            color: #0284c7;
+            border-color: #e2e8f0;
+            border-bottom: 1px solid #ffffff;
+            padding-bottom: 13px;
+        }
+
+        @keyframes horror-shake {
+            0% { transform: translate(3px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-0.5deg); }
+            20% { transform: translate(-3px, 0px) rotate(0.5deg); }
+            30% { transform: translate(0px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(0.5deg); }
+            50% { transform: translate(-1px, 2px) rotate(-0.5deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(2px, 1px) rotate(-0.5deg); }
+            80% { transform: translate(-1px, -1px) rotate(0.5deg); }
+            90% { transform: translate(2px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(0deg); }
+        }
+        @keyframes red-flash {
+            0% { border-color: #e2e8f0; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); }
+            10% { border-color: #ef4444; box-shadow: 0 0 25px rgba(239, 68, 68, 0.4); }
+            100% { border-color: #e2e8f0; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); }
+        }
+        .warning-animation { animation: horror-shake 0.4s ease-in-out, red-flash 0.5s ease-in-out; }
+        .error-message { color: #ef4444; font-size: 0.85rem; font-weight: bold; margin-top: 5px; display: none; text-align: center; background-color: #fef2f2; padding: 10px; border-radius: 6px; border: 1px solid #fee2e2; }
+
+        h2 { text-align: center; color: #0f172a; margin-top: 5px; font-size: 1.4rem; letter-spacing: 1px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; }
+        h3 { color: #1e293b; font-size: 1.1rem; margin-top: 25px; margin-bottom: 15px; border-left: 4px solid #0284c7; padding-left: 10px; }
+
+        .form-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+        .form-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        label { font-size: 0.9rem; color: #64748b; font-weight: bold; }
+
+        .status-grid-full { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .status-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .status-card-header { display: flex; justify-content: space-between; align-items: center; }
+        .status-name { font-size: 1rem; font-weight: bold; color: #0f172a; }
+        .status-formula { font-size: 0.7rem; color: #94a3b8; background-color: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+        .status-control-row { display: flex; gap: 8px; }
+
+        input[type="text"], input[type="number"], select {
+            background-color: #ffffff; border: 1px solid #cbd5e1; color: #1e293b; padding: 10px 12px; border-radius: 6px; font-size: 1rem; box-sizing: border-box;
+        }
+        input[type="text"] { width: 100%; }
+        input:disabled, select:disabled { background-color: #f1f5f9; color: #64748b; cursor: not-allowed; }
+        .input-stat-value { flex: 1; text-align: center; font-weight: bold; font-size: 1rem; }
+        
+        .btn-dice-individual { background-color: #6366f1; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: bold; }
+        .char-limit { font-size: 0.75rem; color: #94a3b8; }
+
+        button { background-color: #0284c7; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        button:hover:not(:disabled) { background-color: #0369a1; }
+        button:disabled { background-color: #cbd5e1; cursor: not-allowed; }
+        .btn-all-random { background-color: #ec4899; margin-bottom: 20px; }
+
+        .character-bar { background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #22c55e; padding: 20px; border-radius: 0 8px 8px 0; margin-bottom: 25px; }
+        .char-name { font-size: 1.4rem; font-weight: bold; color: #0f172a; margin-bottom: 12px; }
+        .char-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; font-size: 0.95rem; color: #334155; align-items: center; }
+        @media (max-width: 500px) { .char-stats { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat-clickable {
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            display: inline-block;
+            min-width: 32px;
+            text-align: center;
+            user-select: none;
+            transition: all 0.15s ease-in-out;
+        }
+        .stat-clickable:hover {
+            background-color: #f1f5f9;
+            border-color: #0284c7;
+            color: #0284c7;
+        }
+        .stat-clickable.selected {
+            background-color: #0284c7;
+            color: #ffffff;
+            border-color: #0284c7;
+            box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25);
+        }
+
+        .dice-phrase { text-align: center; font-size: 1.6rem; font-weight: bold; margin: 20px 0; color: #334155; }
+        
+        .dice-results-container { display: flex; gap: 15px; width: 100%; margin-top: 25px; }
+        .results-column { flex: 1; border-radius: 8px; padding: 12px; box-sizing: border-box; }
+        .dice-result-item {
+            background: white; padding: 8px 10px; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); animation: diceFadeIn 0.2s ease-in-out;
+        }
+        @keyframes diceFadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        @media (max-width: 600px) { .dice-results-container { flex-direction: column; } }
+
+        .skills-section { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 25px; }
+        .points-display { display: flex; justify-content: space-between; margin-bottom: 15px; padding: 12px; background-color: #e2e8f0; border-radius: 6px; font-weight: bold; font-size: 0.9rem; }
+        .skill-table { width: 100%; border-collapse: collapse; }
+        .skill-table th, .skill-table td { padding: 8px; text-align: center; border-bottom: 1px solid #e2e8f0; }
+        .skill-table th { font-size: 0.8rem; color: #64748b; }
+        .skill-table td input { width: 60px; padding: 5px; text-align: center; }
+        .skill-name-td { text-align: left !important; font-weight: bold; font-size: 0.9rem; }
+        .skill-total-td { font-weight: bold; color: #0284c7; font-size: 1.1rem; }
+
+        .final-skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 10px; }
+        .final-skill-card { background: #ffffff; padding: 10px 14px; border-radius: 6px; border: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 0.9rem; align-items: center; }
+
+        .room-badge { background-color: #0f172a; color: #ffffff; padding: 10px 20px; border-radius: 30px; font-size: 1.2rem; font-weight: bold; text-align: center; margin: 15px auto; display: inline-block; }
+        .player-card-container { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        .name-counter-row { display: flex; justify-content: flex-end; margin-top: 2px; }
+
+        .admin-control-panel { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 18px; margin-top: 30px; }
+        .admin-history-panel { margin-top: 15px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; }
+        .history-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; margin-bottom: 6px; }
+        .btn-undo { background-color: #ef4444; padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; }
+        .btn-undo:hover { background-color: #dc2626; }
+    </style>
+</head>
+<body>
+
+<div id="top-nav-container" class="top-nav-bar size-small" style="display: none;">
+    <button type="button" id="nav-btn-home" class="btn-nav active">🏠 探索者ホーム</button>
+    <button type="button" id="nav-btn-dice" class="btn-nav" style="display: none;">🎲 ダイスローラー</button>
+</div>
+
+<div class="container size-small isolated" id="main-container">
+
+    <!-- ページ1: 名前入力画面 -->
+    <div id="page-name" style="display: block;">
+        <h2>探索者登録</h2>
+        <div id="name-error-msg" class="error-message" style="margin-bottom: 15px;"></div>
+        <div class="form-group">
+            <label for="input-name">探索者名を入力してください (最大7文字)</label>
+            <input type="text" id="input-name" placeholder="名前を入力（合キーワードで管理者へ）" autocomplete="off">
+            <div class="name-counter-row"><div class="char-limit" id="char-counter">0 / 7</div></div>
+        </div>
+        <div class="form-group" id="room-input-group">
+            <label for="input-room-id">部屋番号 (5桁 of 数字)</label>
+            <input type="number" id="input-room-id" placeholder="KPから聞いた部屋番号を入力" autocomplete="off">
+        </div>
+        <button type="button" id="to-stats-btn" style="width: 100%;">能力値・技能設定へ進む</button>
+    </div>
+
+    <!-- ページ2: 能力値＆技能設定画面 -->
+    <div id="page-stats-skills" style="display: none;">
+        <h2>能力値・技能設定</h2>
+        <p style="font-size: 0.9rem; color: #64748b; margin-top: -10px; margin-bottom: 20px; text-align: center;">
+            探索者: <span id="stats-title-name" style="font-weight: bold; color: #0284c7;"></span>
+        </p>
+        <div id="skills-error-msg" class="error-message" style="text-align: center; margin-bottom: 15px;"></div>
+        
+        <h3>1. 能力値の設定</h3>
+        <button type="button" id="btn-all-random" class="btn-all-random" style="width: 100%;">全ての能力値を一括ランダム生成</button>
+        <div class="status-grid-full">
+            <div class="status-card"><div class="status-card-header"><span class="status-name">STR</span><span class="status-formula">3D6</span></div><div class="status-control-row"><input type="number" id="input-str" class="input-stat-value" min="3" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('str', 3, 6, 0)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">CON</span><span class="status-formula">3D6</span></div><div class="status-control-row"><input type="number" id="input-con" class="input-stat-value" min="3" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('con', 3, 6, 0)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">POW</span><span class="status-formula">3D6</span></div><div class="status-control-row"><input type="number" id="input-pow" class="input-stat-value" min="3" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('pow', 3, 6, 0)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">DEX</span><span class="status-formula">3D6</span></div><div class="status-control-row"><input type="number" id="input-dex" class="input-stat-value" min="3" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('dex', 3, 6, 0)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">APP</span><span class="status-formula">3D6</span></div><div class="status-control-row"><input type="number" id="input-app" class="input-stat-value" min="3" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('app', 3, 6, 0)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">SIZ</span><span class="status-formula">2D6+6</span></div><div class="status-control-row"><input type="number" id="input-siz" class="input-stat-value" min="8" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('siz', 2, 6, 6)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">INT</span><span class="status-formula">2D6+6</span></div><div class="status-control-row"><input type="number" id="input-int" class="input-stat-value" min="8" max="18" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('int', 2, 6, 6)">振る</button></div></div>
+            <div class="status-card"><div class="status-card-header"><span class="status-name">EDU</span><span class="status-formula">3D6+3</span></div><div class="status-control-row"><input type="number" id="input-edu" class="input-stat-value" min="6" max="21" value="10"><button type="button" class="btn-dice-individual" onclick="rollIndividual('edu', 3, 6, 3)">振る</button></div></div>
+        </div>
+        <h3>2. 技能の割り振り</h3>
+        <div class="skills-section">
+            <div class="points-display">
+                <div>職業P残り: <span id="job-pts-left">0</span> / <span id="job-pts-max">200</span></div>
+                <div>興味P残り: <span id="interest-pts-left">0</span> / <span id="interest-pts-max">100</span></div>
+            </div>
+            <table class="skill-table">
+                <thead><tr><th style="text-align:left;">技能名 (初期値)</th><th>職業P</th><th>興味P</th><th>合計値</th></tr></thead>
+                <tbody id="skill-list-body">
+                    <tr class="skill-row" data-base="25"><td class="skill-name-td">目星 <span style="font-weight:normal; font-size:0.8rem; color:#94a3b8;">(25)</span></td><td><input type="number" class="input-job-p" value="0" min="0"></td><td><input type="number" class="input-interest-p" value="0" min="0"></td><td class="skill-total-td">25</td></tr>
+                    <tr class="skill-row" data-base="15"><td class="skill-name-td">聞き耳 <span style="font-weight:normal; font-size:0.8rem; color:#94a3b8;">(15)</span></td><td><input type="number" class="input-job-p" value="0" min="0"></td><td><input type="number" class="input-interest-p" value="0" min="0"></td><td class="skill-total-td">15</td></tr>
+                    <tr class="skill-row" data-base="25"><td class="skill-name-td">図書館 <span style="font-weight:normal; font-size:0.8rem; color:#94a3b8;">(25)</span></td><td><input type="number" class="input-job-p" value="0" min="0"></td><td><input type="number" class="input-interest-p" value="0" min="0"></td><td class="skill-total-td">25</td></tr>
+                    <tr class="skill-row" data-base="30"><td class="skill-name-td">回避 <span style="font-weight:normal; font-size:0.8rem; color:#94a3b8;">(30)</span></td><td><input type="number" class="input-job-p" value="0" min="0"></td><td><input type="number" class="input-interest-p" value="0" min="0"></td><td class="skill-total-td">30</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="font-size:0.8rem; color:#64748b; text-align:center; margin-bottom:8px;">※確定するとKPの部屋へ自動接続されます</div>
+        <button type="button" id="lock-char-btn" style="width: 100%; background-color: #ef4444;">キャラクターを確定する（KPに送信）</button>
+    </div>
+
+    <!-- ページ3: 確定後の探索者ホーム画面 -->
+    <div id="page-home" style="display: none;">
+        <h2>探索者ホーム</h2>
+        <div id="connection-status-msg" class="error-message" style="margin-bottom: 15px; background-color: #f0fdf4; border-color: #bbf7d0; color: #166534;"></div>
+        <div class="character-bar">
+            <div class="char-name" id="display-name">探索者名</div>
+            <div style="font-size: 0.9rem; font-weight: bold; color: #475569; margin-bottom: 6px;">【 能力値 】</div>
+            <div class="char-stats" id="display-stats"></div>
+            <div style="font-size: 0.9rem; font-weight: bold; color: #475569; margin-top: 18px; margin-bottom: 6px; border-top: 1px dashed #cbd5e1; padding-top: 12px;">【 状態（KPのみ変更可） 】</div>
+            <div class="char-stats" id="display-status"></div>
+            <div style="font-size: 0.9rem; font-weight: bold; color: #475569; margin-top: 18px; margin-bottom: 6px; border-top: 1px dashed #cbd5e1; padding-top: 12px;">【 確定技能一覧 】</div>
+            <div class="final-skills-grid" id="display-final-skills"></div>
+        </div>
+        <button type="button" id="reset-char-btn" style="background-color: #64748b; width: 100%; margin-top: 45px; font-size: 0.85rem; padding: 10px;">データをクリアして最初から作り直す</button>
+    </div>
+
+    <!-- ページ4: ダイス画面 -->
+    <div id="page-dice" style="display: none;">
+        <h2>ダイスローラー</h2>
+        <div style="max-width: 650px; margin: 0 auto;">
+            <div class="form-row">
+                <label for="dice-count">ダイスの個数 (x)</label>
+                <select id="dice-count"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+            </div>
+            <div class="form-row">
+                <label for="dice-sides">ダイスの面数 (y)</label>
+                <input type="number" id="dice-sides" min="3" max="110" value="100">
+            </div>
+            
+            <div class="form-row" style="justify-content: center; gap: 30px; margin-top: 15px; margin-bottom: 5px;">
+                <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    <input type="radio" name="dice-mode" value="share" checked style="transform: scale(1.2);"> 👥 結果を全体に共有
+                </label>
+                <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                    <input type="radio" name="dice-mode" value="private" style="transform: scale(1.2);"> 🔒 自分のみ（個人）
+                </label>
+            </div>
+
+            <div class="dice-phrase"><span id="formula-display">1d100</span></div>
+            <button type="button" id="roll-btn" style="background-color: #22c55e; width: 100%;">ダイスを振る</button>
+            
+            <div class="dice-results-container">
+                <div class="results-column" style="background: #f0fdf4; border: 1px solid #bbf7d0;">
+                    <h4 style="margin: 0 0 10px 0; color: #166534; text-align: center; border-bottom: 1px solid #bbf7d0; padding-bottom: 6px; font-size: 0.9rem;">👥 共有された結果</h4>
+                    <div id="share-results-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; padding-right: 2px;"></div>
+                </div>
+                <div class="results-column" style="background: #f8fafc; border: 1px solid #e2e8f0;">
+                    <h4 style="margin: 0 0 10px 0; color: #475569; text-align: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; font-size: 0.9rem;">🔒 個人の結果</h4>
+                    <div id="private-results-list" style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto; padding-right: 2px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ページ5: 管理者(KP)専用・遠隔変更画面 -->
+    <div id="page-admin" style="display: none;">
+        <h2>キーパー(KP) リアルタイム管理画面</h2>
+        <p style="text-align: center; color: #64748b; margin-bottom: 5px;">プレイヤーに以下の部屋番号を共有してください：</p>
+        <div style="text-align: center;"><div class="room-badge">部屋番号: <span id="admin-room-id">通信確立中...</span></div></div>
+        
+        <h3>参加プレイヤーのリアルタイム監視</h3>
+        <div id="player-list" class="player-card-container">
+            <p id="no-player-msg" style="text-align: center; color: #94a3b8; font-style: italic; margin-top: 20px;">まだ参加しているプレイヤーはいません</p>
+        </div>
+
+        <div class="admin-control-panel">
+            <h4 style="margin: 0 0 10px 0; color: #1e293b; font-size: 0.95rem;">⚡ ステータス計算コントロール</h4>
+            <div id="calc-current-display" style="font-size: 0.85rem; font-weight: bold; color: #64748b; margin-bottom: 12px; padding: 8px; background: #e2e8f0; border-radius: 6px; text-align: center;">
+                上のステータス数値をどれかクリックして選択してください
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <select id="calc-operator" style="padding: 10px;" disabled>
+                    <option value="+">＋ 足す (加算)</option>
+                    <option value="-">－ 引く (減算)</option>
+                    <option value="*">× かける (乗算)</option>
+                    <option value="/">÷ わる (除算)</option>
+                </select>
+                <input type="number" id="calc-value" placeholder="数値を入力" style="flex: 1; padding: 10px;" disabled autocomplete="off">
+                <button type="button" id="calc-apply-btn" style="background-color: #22c55e; padding: 10px 20px;" disabled>適用</button>
+            </div>
+        </div>
+
+        <div class="admin-history-panel">
+            <h4 style="margin: 0 0 10px 0; color: #64748b; font-size: 0.85rem;">📜 変更履歴 (いつでも、誰のデータでもピンポイントで取消可能)</h4>
+            <div id="admin-history-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+                <p id="no-history-msg" style="color: #94a3b8; font-style: italic; text-align: center; margin: 10px 0;">まだ履歴はありません</p>
+            </div>
+        </div>
+        
+        <button type="button" id="admin-close-btn" style="background-color: #64748b; width: 100%; margin-top: 30px; font-size: 0.85rem; padding: 10px;">管理画面を閉じる（データを消去）</button>
+    </div>
+
+</div>
+
+<script>
+    const ADMIN_HASH = "c9ab14625a539ebae8788d244322639a1f764ad8f187004be174bda07aa49d95"; 
+    const STORAGE_KEY = 'coc_char_session_save_data';
+
+    async function calcSHA256(text) {
+        const msgBuffer = new TextEncoder().encode(text);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function rollDice(count, sides, plus) {
+        let total = 0;
+        for (let i = 0; i < count; i++) { total += Math.floor(Math.random() * sides) + 1; }
+        return total + plus;
+    }
+
+    function rollIndividual(id, count, sides, plus) {
+        const input = document.getElementById(`input-${id}`);
+        if (input) {
+            input.value = rollDice(count, sides, plus);
+            if (typeof window.updateAllCalculations === 'function') { window.updateAllCalculations(); }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const mainContainer = document.getElementById('main-container');
+        const topNavContainer = document.getElementById('top-nav-container');
+        
+        const pages = {
+            name: document.getElementById('page-name'),
+            statsSkills: document.getElementById('page-stats-skills'),
+            home: document.getElementById('page-home'),
+            dice: document.getElementById('page-dice'),
+            admin: document.getElementById('page-admin')
+        };
+        
+        const navButtons = { home: document.getElementById('nav-btn-home'), dice: document.getElementById('nav-btn-dice') };
+        const inputName = document.getElementById('input-name');
+        const inputRoomId = document.getElementById('input-room-id');
+        const charCounter = document.getElementById('char-counter');
+        const nameErrorMsg = document.getElementById('name-error-msg');
+        const skillsErrorMsg = document.getElementById('skills-error-msg');
+        const connectionStatusMsg = document.getElementById('connection-status-msg');
+        
+        const toStatsBtn = document.getElementById('to-stats-btn');
+        const btnAllRandom = document.getElementById('btn-all-random');
+        const statsTitleName = document.getElementById('stats-title-name');
+        const lockCharBtn = document.getElementById('lock-char-btn');
+        const resetCharBtn = document.getElementById('reset-char-btn');
+        const adminCloseBtn = document.getElementById('admin-close-btn');
+
+        const MAX_LENGTH = 7;
+        let isCharacterLocked = false; 
+        let isAdminMode = false;
+        let myName = "";
+        let myPeer = null;
+        let activeConnections = {}; 
+        let remotePlayersData = {}; 
+        let currentAdminRoomId = null;
+
+        let selectedTarget = { playerName: '', category: '', key: '', currentValue: 0 };
+        let actionHistory = [];
+
+        function updateNavVisibility() { if (navButtons.dice) { navButtons.dice.style.display = (isCharacterLocked || isAdminMode) ? 'flex' : 'none'; } }
+
+        function switchDisplayState(targetPage) {
+            for (const key in pages) { if (pages[key]) pages[key].style.display = 'none'; }
+            if (topNavContainer) {
+                topNavContainer.style.display = (targetPage === 'name') ? 'none' : 'flex';
+                if (targetPage === 'statsSkills' || targetPage === 'home' || targetPage === 'admin' || targetPage === 'dice') {
+                    topNavContainer.className = 'top-nav-bar size-large'; mainContainer.className = 'container size-large';
+                } else {
+                    topNavContainer.className = 'top-nav-bar size-small'; mainContainer.className = 'container size-small';
+                }
+            }
+            if (navButtons.home && navButtons.dice) {
+                if (targetPage === 'dice') { navButtons.dice.classList.add('active'); navButtons.home.classList.remove('active'); }
+                else { navButtons.home.classList.add('active'); navButtons.dice.classList.remove('active'); }
+            }
+            if (pages[targetPage]) { pages[targetPage].style.display = 'block'; }
+        }
+
+        /* 💾 KPの状態をセッションに保存 */
+        function saveAdminState() {
+            if (!isAdminMode) return;
+            const state = {
+                isAdminMode: true,
+                roomId: currentAdminRoomId,
+                remotePlayersData: remotePlayersData,
+                actionHistory: actionHistory
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        /* 🔗 修正箇所: 既存の部屋番号(existingRoomId)があればそれを優先して復元 */
+        function startAdminServer(existingRoomId = null) {
+            currentAdminRoomId = existingRoomId || Math.floor(10000 + Math.random() * 90000).toString();
+            const badge = document.getElementById('admin-room-id');
+            badge.textContent = "サーバー接続中...";
+
+            if (myPeer && !myPeer.destroyed) { myPeer.destroy(); }
+            
+            myPeer = new Peer('coc-room-peer-' + currentAdminRoomId);
+
+            myPeer.on('open', (id) => {
+                badge.textContent = currentAdminRoomId; 
+                saveAdminState(); // 部屋番号が確定したら保存
+            });
+
+            myPeer.on('error', (err) => {
+                console.error("KP Peer Error:", err);
+                if (err.type === 'unavailable-id') {
+                    // IDが一時的に重複している場合は1秒後に再試行
+                    setTimeout(() => startAdminServer(currentAdminRoomId), 1000);
+                } else {
+                    alert(`⚠️ 通信エラーが発生しました (${err.type})\nページを再読み込みしてやり直してください。`);
+                }
+            });
+
+            myPeer.on('connection', (conn) => {
+                let connectedPlayerName = "";
+                conn.on('data', (data) => {
+                    if (data.type === 'init') {
+                        connectedPlayerName = data.character.name;
+                        activeConnections[connectedPlayerName] = conn;
+                        
+                        if (remotePlayersData[connectedPlayerName]) {
+                            conn.send({ type: 'update', character: remotePlayersData[connectedPlayerName] });
+                        } else {
+                            remotePlayersData[connectedPlayerName] = data.character;
+                        }
+                        
+                        document.getElementById('no-player-msg').style.display = 'none';
+                        renderPlayerCardOnAdmin(connectedPlayerName);
+                        saveAdminState();
+                    }
+                    
+                    if (data.type === 'dice_roll') {
+                        addDiceResultToList('share', data.name, data.formula, data.total, data.details);
+                        broadcastToAllPlayers({ type: 'dice_share', name: data.name, formula: data.formula, total: data.total, details: data.details });
+                    }
+                });
+                conn.on('close', () => {
+                    if (connectedPlayerName) {
+                        delete activeConnections[connectedPlayerName];
+                    }
+                });
+            });
+        }
+
+        function broadcastToAllPlayers(message) {
+            for (const [pName, conn] of Object.entries(activeConnections)) {
+                if (conn && conn.open) { conn.send(message); }
+            }
+        }
+
+        function renderPlayerCardOnAdmin(pName) {
+            const data = remotePlayersData[pName];
+            if (!data) return;
+            const playerList = document.getElementById('player-list');
+            let card = document.getElementById('pl-card-' + data.name);
+            if (!card) { card = document.createElement('div'); card.id = 'pl-card-' + data.name; card.className = 'character-bar'; playerList.appendChild(card); }
+
+            let statsHtml = '';
+            for (const [key, val] of Object.entries(data.stats)) {
+                const isSel = (selectedTarget.playerName === data.name && selectedTarget.category === 'stats' && selectedTarget.key === key) ? 'selected' : '';
+                statsHtml += `<div><strong>${key.toUpperCase()}:</strong> <span class="stat-clickable ${isSel}" onclick="selectStatElement('${data.name}', 'stats', '${key}', ${val})">${val}</span></div>`;
+            }
+            let statusHtml = '';
+            for (const [key, val] of Object.entries(data.status)) {
+                const isSel = (selectedTarget.playerName === data.name && selectedTarget.category === 'status' && selectedTarget.key === key) ? 'selected' : '';
+                statusHtml += `<div><strong>${key.toUpperCase()}:</strong> <span class="stat-clickable ${isSel}" onclick="selectStatElement('${data.name}', 'status', '${key}', ${val})">${val}</span></div>`;
+            }
+            let skillsHtml = '';
+            data.skills.forEach(sk => {
+                const isSel = (selectedTarget.playerName === data.name && selectedTarget.category === 'skills' && selectedTarget.key === sk.name) ? 'selected' : '';
+                skillsHtml += `<div class="final-skill-card"><span style="font-weight:bold;">${sk.name}</span><span class="stat-clickable ${isSel}" onclick="selectStatElement('${data.name}', 'skills', '${sk.name}', ${sk.value})">${sk.value}</span></div>`;
+            });
+
+            card.innerHTML = `
+                <div class="char-name" style="color:#0284c7;">${data.name} 👤</div>
+                <div style="font-size:0.85rem; font-weight:bold; color:#475569; margin-bottom:6px;">【 能力値 】</div>
+                <div class="char-stats" style="gap:8px; margin-bottom:12px;">${statsHtml}</div>
+                <div style="font-size:0.85rem; font-weight:bold; color:#475569; margin-bottom:6px; border-top:1px dashed #cbd5e1; padding-top:8px;">【 状態 (HP/MP/SAN) 】</div>
+                <div class="char-stats" style="gap:8px; margin-bottom:12px;">${statusHtml}</div>
+                <div style="font-size:0.85rem; font-weight:bold; color:#475569; margin-bottom:6px; border-top:1px dashed #cbd5e1; padding-top:8px;">【 技能 】</div>
+                <div class="final-skills-grid">${skillsHtml}</div>
+            `;
+        }
+
+        window.selectStatElement = function(pName, category, key, currentVal) {
+            selectedTarget = { playerName: pName, category: category, key: key, currentValue: currentVal };
+            Object.keys(remotePlayersData).forEach(name => renderPlayerCardOnAdmin(name));
+            
+            const displayBox = document.getElementById('calc-current-display');
+            displayBox.textContent = `選択中 ➡️ [ ${pName} ] の 【 ${key.toUpperCase()} 】 (現在値: ${currentVal})`;
+            displayBox.style.backgroundColor = '#bae6fd';
+            displayBox.style.color = '#0369a1';
+
+            document.getElementById('calc-operator').disabled = false;
+            document.getElementById('calc-value').disabled = false;
+            document.getElementById('calc-apply-btn').disabled = false;
+            document.getElementById('calc-value').focus();
+        };
+
+        document.getElementById('calc-apply-btn').addEventListener('click', () => {
+            if (!selectedTarget.playerName) return;
+            const op = document.getElementById('calc-operator').value;
+            const inputVal = parseFloat(document.getElementById('calc-value').value);
+            if (isNaN(inputVal)) return;
+
+            const data = remotePlayersData[selectedTarget.playerName];
+            if (!data) return;
+
+            let originalVal = 0;
+            if (selectedTarget.category === 'stats') originalVal = data.stats[selectedTarget.key];
+            else if (selectedTarget.category === 'status') originalVal = data.status[selectedTarget.key];
+            else if (selectedTarget.category === 'skills') {
+                const sk = data.skills.find(s => s.name === selectedTarget.key);
+                if (sk) originalVal = sk.value;
+            }
+
+            let newVal = originalVal;
+            if (op === '+') newVal = originalVal + inputVal;
+            else if (op === '-') newVal = originalVal - inputVal;
+            else if (op === '*') newVal = originalVal * inputVal;
+            else if (op === '/') newVal = inputVal !== 0 ? originalVal / inputVal : originalVal;
+
+            newVal = Math.round(newVal);
+            let diff = newVal - originalVal;
+
+            updatePlayerValueDirect(selectedTarget.playerName, selectedTarget.category, selectedTarget.key, newVal);
+
+            const actionId = Date.now() + Math.random().toString(36).substr(2, 4);
+            actionHistory.unshift({
+                id: actionId,
+                playerName: selectedTarget.playerName,
+                category: selectedTarget.category,
+                key: selectedTarget.key,
+                diff: diff,
+                logText: `「${selectedTarget.key.toUpperCase()}」を ${originalVal} から (${op}${inputVal}) 計算して ${newVal} に変更`
+            });
+
+            document.getElementById('calc-value').value = '';
+            renderPlayerCardOnAdmin(selectedTarget.playerName);
+            renderHistoryList();
+            saveAdminState();
+            window.selectStatElement(selectedTarget.playerName, selectedTarget.category, selectedTarget.key, newVal);
+        });
+
+        function renderHistoryList() {
+            const listEl = document.getElementById('admin-history-list');
+            if (!listEl) return;
+            if (actionHistory.length === 0) {
+                listEl.innerHTML = '<p id="no-history-msg" style="color: #94a3b8; font-style: italic; text-align: center; margin: 10px 0;">まだ履歴はありません</p>';
+                return;
+            }
+            listEl.innerHTML = '';
+            actionHistory.forEach((hist) => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                const undoControl = `<button type="button" class="btn-undo" onclick="undoAction('${hist.id}')">取消</button>`;
+                item.innerHTML = `
+                    <span style="color: #334155;"><strong>[${hist.playerName}]</strong> ${hist.logText}</span>
+                    ${undoControl}
+                `;
+                listEl.appendChild(item);
+            });
+        }
+
+        window.undoAction = function(id) {
+            const idx = actionHistory.findIndex(h => h.id === id);
+            if (idx === -1) return;
+            const hist = actionHistory[idx];
+            const data = remotePlayersData[hist.playerName];
+            if (!data) return;
+
+            let currentVal = 0;
+            if (hist.category === 'stats') currentVal = data.stats[hist.key];
+            else if (hist.category === 'status') currentVal = data.status[hist.key];
+            else if (hist.category === 'skills') {
+                const sk = data.skills.find(s => s.name === hist.key);
+                if (sk) currentVal = sk.value;
+            }
+
+            let restoredVal = currentVal - hist.diff;
+            updatePlayerValueDirect(hist.playerName, hist.category, hist.key, restoredVal);
+            actionHistory.splice(idx, 1);
+
+            renderPlayerCardOnAdmin(hist.playerName);
+            renderHistoryList();
+            saveAdminState();
+
+            if (selectedTarget.playerName === hist.playerName && selectedTarget.category === hist.category && selectedTarget.key === hist.key) {
+                window.selectStatElement(hist.playerName, hist.category, hist.key, restoredVal);
+            }
+        };
+
+        function updatePlayerValueDirect(pName, category, key, newValue) {
+            const data = remotePlayersData[pName];
+            if (!data) return;
+            
+            if (category === 'stats') data.stats[key] = newValue;
+            else if (category === 'status') data.status[key] = newValue;
+            else if (category === 'skills') { const sk = data.skills.find(s => s.name === key); if (sk) sk.value = newValue; }
+
+            const conn = activeConnections[pName];
+            if (conn) { conn.send({ type: 'update', character: data }); }
+            saveAdminState();
+        }
+
+        function connectAndListenToKP(roomId, charData) {
+            if (myPeer && !myPeer.destroyed) { myPeer.destroy(); }
+            
+            const targetErrorArea = document.getElementById('skills-error-msg') || document.getElementById('name-error-msg');
+            if (targetErrorArea) {
+                targetErrorArea.textContent = "📡 KPの部屋に接続を試みています...";
+                targetErrorArea.style.display = 'block';
+                targetErrorArea.style.backgroundColor = '#e0f2fe';
+                targetErrorArea.style.borderColor = '#bae6fd';
+                targetErrorArea.style.color = '#0369a1';
+            }
+
+            if (connectionStatusMsg) {
+                connectionStatusMsg.textContent = "📡 KPの部屋にデータ送信・同期中...";
+                connectionStatusMsg.style.display = 'block';
+                connectionStatusMsg.style.backgroundColor = '#e0f2fe';
+                connectionStatusMsg.style.borderColor = '#bae6fd';
+                connectionStatusMsg.style.color = '#0369a1';
+            }
+
+            myPeer = new Peer();
+            
+            myPeer.on('error', (err) => {
+                console.error("Player Peer Error:", err);
+                const errMsg = `❌ 通信エラー (${err.type}): KPが部屋を開いているか確認してください。`;
+                if (targetErrorArea) {
+                    targetErrorArea.textContent = errMsg; targetErrorArea.style.display = 'block';
+                    targetErrorArea.style.backgroundColor = '#fef2f2'; targetErrorArea.style.borderColor = '#fee2e2'; targetErrorArea.style.color = '#ef4444';
+                }
+                if (connectionStatusMsg) {
+                    connectionStatusMsg.textContent = errMsg; connectionStatusMsg.style.display = 'block';
+                    connectionStatusMsg.style.backgroundColor = '#fef2f2'; connectionStatusMsg.style.borderColor = '#fee2e2'; connectionStatusMsg.style.color = '#ef4444';
+                }
+                triggerErrorAnimation();
+            });
+
+            myPeer.on('open', () => {
+                const conn = myPeer.connect('coc-room-peer-' + roomId);
+                window.kpConnection = conn; 
+                
+                conn.on('open', () => {
+                    if (targetErrorArea) targetErrorArea.style.display = 'none';
+                    if (connectionStatusMsg) {
+                        connectionStatusMsg.textContent = `🟢 KPの部屋 (${roomId}) と正常に同期しています`;
+                        connectionStatusMsg.style.backgroundColor = '#f0fdf4'; connectionStatusMsg.style.borderColor = '#bbf7d0'; connectionStatusMsg.style.color = '#166534';
+                    }
+                    conn.send({ type: 'init', character: charData });
+                });
+                
+                conn.on('data', (data) => {
+                    if (data.type === 'update') { applyDataFromServer(data.character); }
+                    if (data.type === 'dice_share') {
+                        addDiceResultToList('share', data.name, data.formula, data.total, data.details);
+                    }
+                });
+
+                /* 🔗 修正箇所: KPがリロードしても、自動で再接続を試みる仕組みを追加 */
+                conn.on('close', () => {
+                    if (isCharacterLocked) {
+                        if (connectionStatusMsg) {
+                            connectionStatusMsg.textContent = "⚠️ KPとの接続が切れました。再接続を試みています...";
+                            connectionStatusMsg.style.backgroundColor = '#fffbeb'; connectionStatusMsg.style.borderColor = '#fde68a'; connectionStatusMsg.style.color = '#b45309';
+                        }
+                        setTimeout(() => {
+                            connectAndListenToKP(roomId, charData);
+                        }, 3000);
+                    }
+                });
+            });
+        }
+
+        function applyDataFromServer(charData) {
+            document.getElementById('display-name').textContent = charData.name;
+            document.getElementById('display-stats').innerHTML = `
+                <span><strong>STR:</strong> ${charData.stats.str}</span><span><strong>CON:</strong> ${charData.stats.con}</span>
+                <span><strong>POW:</strong> ${charData.stats.pow}</span><span><strong>DEX:</strong> ${charData.stats.dex}</span>
+                <span><strong>APP:</strong> ${charData.stats.app}</span><span><strong>SIZ:</strong> ${charData.stats.siz}</span>
+                <span><strong>INT:</strong> ${charData.stats.int}</span><span><strong>EDU:</strong> ${charData.stats.edu}</span>`;
+            document.getElementById('display-status').innerHTML = `
+                <span style="color:#ef4444;"><strong>HP:</strong> ${charData.status.hp}</span><span style="color:#3b82f6;"><strong>MP:</strong> ${charData.status.mp}</span>
+                <span style="color:#10b981;"><strong>SAN:</strong> ${charData.status.san}</span><span style="color:#8b5cf6;"><strong>幸運:</strong> ${charData.status.fortune}</span>`;
+
+            const displayFinalSkills = document.getElementById('display-final-skills');
+            displayFinalSkills.innerHTML = '';
+            charData.skills.forEach(sk => {
+                const card = document.createElement('div'); card.className = 'final-skill-card';
+                card.innerHTML = `<span style="font-weight:bold;">${sk.name}</span><span style="color:#0284c7; font-weight:bold;">${sk.value}</span>`;
+                displayFinalSkills.appendChild(card);
+            });
+
+            const state = {
+                page: pages.dice.style.display === 'block' ? 'page-dice' : 'page-home', mainPage: 'page-home',
+                name: charData.name, roomId: inputRoomId.value, isLocked: true, charData: charData
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function saveToStorage() {
+            if (isCharacterLocked || isAdminMode) return; 
+            let currentMainPage = 'page-name';
+            if (pages.name.style.display === 'block') currentMainPage = 'page-name';
+            if (pages.statsSkills.style.display === 'block') currentMainPage = 'page-stats-skills';
+            const skillData = [];
+            document.querySelectorAll('.skill-row').forEach(row => {
+                skillData.push({ job: row.querySelector('.input-job-p')?.value || 0, interest: row.querySelector('.input-interest-p')?.value || 0 });
+            });
+            const state = {
+                page: currentMainPage, mainPage: currentMainPage, name: inputName.value, roomId: inputRoomId.value, isLocked: false,
+                stats: {
+                    str: document.getElementById('input-str')?.value || 10, con: document.getElementById('input-con')?.value || 10,
+                    pow: document.getElementById('input-pow')?.value || 10, dex: document.getElementById('input-dex')?.value || 10,
+                    app: document.getElementById('input-app')?.value || 10, siz: document.getElementById('input-siz')?.value || 10,
+                    int: document.getElementById('input-int')?.value || 10, edu: document.getElementById('input-edu')?.value || 10
+                }, skills: skillData
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        /* 🔗 修正箇所: KPモード復元処理を強化 */
+        function loadFromStorage() {
+            const rawData = sessionStorage.getItem(STORAGE_KEY); 
+            if (!rawData) { isCharacterLocked = false; updateNavVisibility(); switchDisplayState('name'); return; }
+            try {
+                const state = JSON.parse(rawData);
+
+                // KP（管理モード）の復元処理
+                if (state.isAdminMode) {
+                    isAdminMode = true;
+                    myName = "KP";
+                    document.getElementById('nav-btn-home').textContent = "⚙️ 管理画面";
+                    updateNavVisibility();
+                    switchDisplayState('admin');
+                    
+                    if (state.remotePlayersData) remotePlayersData = state.remotePlayersData;
+                    if (state.actionHistory) actionHistory = state.actionHistory;
+
+                    if (Object.keys(remotePlayersData).length > 0) {
+                        const noMsg = document.getElementById('no-player-msg');
+                        if (noMsg) noMsg.style.display = 'none';
+                        Object.keys(remotePlayersData).forEach(pName => renderPlayerCardOnAdmin(pName));
+                    }
+                    renderHistoryList();
+
+                    // 同じ部屋番号でKPサーバーを再起動
+                    startAdminServer(state.roomId);
+                    return;
+                }
+
+                // プレイヤーの復元処理
+                if (inputName && state.name) { inputName.value = state.name; charCounter.textContent = `${state.name.length} / ${MAX_LENGTH}`; }
+                if (inputRoomId && state.roomId) inputRoomId.value = state.roomId;
+                if (statsTitleName && state.name) statsTitleName.textContent = state.name;
+
+                if (state.isLocked) {
+                    isCharacterLocked = true; toggleInputsDisabled(true); updateNavVisibility();
+                    myName = state.name; 
+                    applyDataFromServer(state.charData); switchDisplayState(state.page === 'page-dice' ? 'dice' : 'home');
+                    connectAndListenToKP(state.roomId, state.charData); 
+                } else {
+                    if (state.stats) { for (const sKey in state.stats) { if (document.getElementById(`input-${sKey}`)) document.getElementById(`input-${sKey}`).value = state.stats[sKey]; } }
+                    if (state.skills) {
+                        document.querySelectorAll('.skill-row').forEach((row, idx) => {
+                            if (state.skills[idx]) {
+                                if (row.querySelector('.input-job-p')) row.querySelector('.input-job-p').value = state.skills[idx].job;
+                                if (row.querySelector('.input-interest-p')) row.querySelector('.input-interest-p').value = state.skills[idx].interest;
+                            }
+                        });
+                    }
+                    window.updateAllCalculations(true);
+                    isCharacterLocked = false; toggleInputsDisabled(false); updateNavVisibility();
+                    switchDisplayState(state.page === 'page-stats-skills' ? 'statsSkills' : 'name');
+                }
+            } catch (e) { switchDisplayState('name'); }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && isCharacterLocked) {
+                const rawData = sessionStorage.getItem(STORAGE_KEY);
+                if (rawData) {
+                    try {
+                        const state = JSON.parse(rawData);
+                        if (state.isLocked && state.roomId && state.charData) {
+                            connectAndListenToKP(state.roomId, state.charData);
+                        }
+                    } catch(e) {}
+                }
+            }
+        });
+
+        function toggleInputsDisabled(disabledState) {
+            document.querySelectorAll('#input-name, #input-room-id, .input-stat-value, .btn-dice-individual, #btn-all-random, .input-job-p, .input-interest-p, #lock-char-btn').forEach(el => { el.disabled = disabledState; });
+        }
+
+        if (inputName && charCounter) {
+            inputName.addEventListener('input', () => {
+                const currentLength = inputName.value.length; charCounter.textContent = `${currentLength} / ${MAX_LENGTH}`;
+                if (currentLength > MAX_LENGTH) { charCounter.style.color = '#ef4444'; charCounter.style.fontWeight = 'bold'; }
+                else { charCounter.style.color = '#94a3b8'; charCounter.style.fontWeight = 'normal'; if (nameErrorMsg) nameErrorMsg.style.display = 'none'; }
+                saveToStorage(); 
+            });
+        }
+
+        function triggerErrorAnimation() { if (mainContainer) { mainContainer.classList.remove('warning-animation'); void mainContainer.offsetWidth; mainContainer.classList.add('warning-animation'); } }
+
+        toStatsBtn.addEventListener('click', async () => {
+            const name = inputName.value.trim();
+            const hashedInput = await calcSHA256(name);
+            
+            if (hashedInput === ADMIN_HASH) {
+                if (nameErrorMsg) nameErrorMsg.style.display = 'none';
+                isAdminMode = true;
+                myName = "KP";
+                document.getElementById('nav-btn-home').textContent = "⚙️ 管理画面";
+                updateNavVisibility();
+                switchDisplayState('admin'); 
+                startAdminServer(); 
+                return;
+            }
+
+            if (name === "") { if (nameErrorMsg) { nameErrorMsg.textContent = "探索者名を入力してください。"; nameErrorMsg.style.display = 'block'; } triggerErrorAnimation(); return; }
+            if (inputName.value.length > MAX_LENGTH) { if (nameErrorMsg) { nameErrorMsg.textContent = "探索者名は7文字以内に収めてください。"; nameErrorMsg.style.display = 'block'; } triggerErrorAnimation(); return; }
+
+            const roomId = inputRoomId.value.trim();
+            if (roomId === "") { if (nameErrorMsg) { nameErrorMsg.textContent = "部屋番号を入力してください。"; nameErrorMsg.style.display = 'block'; } triggerErrorAnimation(); return; }
+
+            if (nameErrorMsg) nameErrorMsg.style.display = 'none';
+            myName = name;
+            if (statsTitleName) statsTitleName.textContent = name;
+            switchDisplayState('statsSkills'); window.updateAllCalculations();
+        });
+
+        window.updateAllCalculations = function(skipSave = false) {
+            const eduVal = parseInt(document.getElementById('input-edu')?.value) || 0;
+            const intVal = parseInt(document.getElementById('input-int')?.value) || 0;
+            const maxJobPts = eduVal * 20; const maxInterestPts = intVal * 10;
+            
+            if (document.getElementById('job-pts-max')) document.getElementById('job-pts-max').textContent = maxJobPts;
+            if (document.getElementById('interest-pts-max')) document.getElementById('interest-pts-max').textContent = maxInterestPts;
+            
+            let usedJob = 0; let usedInterest = 0;
+            document.querySelectorAll('.skill-row').forEach(row => {
+                const base = parseInt(row.getAttribute('data-base')) || 0;
+                const jobInput = row.querySelector('.input-job-p'); const interestInput = row.querySelector('.input-interest-p');
+                const totalTd = row.querySelector('.skill-total-td');
+                if (!jobInput || !interestInput || !totalTd) return;
+
+                let jobV = parseInt(jobInput.value) || 0; let interestV = parseInt(interestInput.value) || 0;
+                if (jobV < 0) { jobV = 0; jobInput.value = 0; } if (interestV < 0) { interestV = 0; interestInput.value = 0; }
+                usedJob += jobV; usedInterest += interestV; totalTd.textContent = base + jobV + interestV;
+            });
+            
+            const jobLeft = maxJobPts - usedJob; const interestLeft = maxInterestPts - usedInterest;
+            if (document.getElementById('job-pts-left')) { document.getElementById('job-pts-left').textContent = jobLeft; document.getElementById('job-pts-left').style.color = jobLeft < 0 ? '#ef4444' : '#334155'; }
+            if (document.getElementById('interest-pts-left')) { document.getElementById('interest-pts-left').textContent = interestLeft; document.getElementById('interest-pts-left').style.color = interestLeft < 0 ? '#ef4444' : '#334155'; }
+            if (skillsErrorMsg && jobLeft >= 0 && interestLeft >= 0) skillsErrorMsg.style.display = 'none';
+            if (!skipSave) saveToStorage();
+        };
+
+        document.querySelectorAll('.input-stat-value').forEach(input => { input.addEventListener('input', () => window.updateAllCalculations()); });
+        if (document.getElementById('skill-list-body')) document.getElementById('skill-list-body').addEventListener('input', () => window.updateAllCalculations());
+
+        if (btnAllRandom) {
+            btnAllRandom.addEventListener('click', () => {
+                rollIndividual('str', 3, 6, 0); rollIndividual('con', 3, 6, 0); rollIndividual('pow', 3, 6, 0); rollIndividual('dex', 3, 6, 0);
+                rollIndividual('app', 3, 6, 0); rollIndividual('siz', 2, 6, 6); rollIndividual('int', 2, 6, 6); rollIndividual('edu', 3, 6, 3);
+            });
+        }
+
+        if (lockCharBtn) {
+            lockCharBtn.addEventListener('click', () => {
+                const jobLeft = parseInt(document.getElementById('job-pts-left')?.textContent || 0);
+                const interestLeft = parseInt(document.getElementById('interest-pts-left')?.textContent || 0);
+                if (jobLeft < 0 || interestLeft < 0) { if (skillsErrorMsg) { skillsErrorMsg.textContent = "ポイントが不足しています。"; skillsErrorMsg.style.display = 'block'; } triggerErrorAnimation(); return; }
+
+                const targetRoomId = inputRoomId.value.trim();
+                if (targetRoomId === "") {
+                    if (skillsErrorMsg) { skillsErrorMsg.textContent = "部屋番号が取得できません。最初の画面からやり直してください。"; skillsErrorMsg.style.display = 'block'; }
+                    triggerErrorAnimation(); return;
+                }
+
+                if (!confirm("キャラクターを確定しますか？")) return;
+                isCharacterLocked = true; updateNavVisibility(); toggleInputsDisabled(true); 
+
+                const name = inputName.value.trim();
+                const stats = {
+                    str: parseInt(document.getElementById('input-str')?.value) || 10, con: parseInt(document.getElementById('input-con')?.value) || 10,
+                    pow: parseInt(document.getElementById('input-pow')?.value) || 10, dex: parseInt(document.getElementById('input-dex')?.value) || 10,
+                    app: parseInt(document.getElementById('input-app')?.value) || 10, siz: parseInt(document.getElementById('input-siz')?.value) || 10,
+                    int: parseInt(document.getElementById('input-int')?.value) || 10, edu: parseInt(document.getElementById('input-edu')?.value) || 10
+                };
+
+                const status = {
+                    hp: Math.ceil((stats.con + stats.siz) / 2),
+                    mp: stats.pow, san: stats.pow * 5, fortune: stats.pow * 5
+                };
+
+                const finalSkills = [];
+                document.querySelectorAll('.skill-row').forEach(row => {
+                    finalSkills.push({
+                        name: row.querySelector('.skill-name-td')?.childNodes[0].textContent.trim() || '技能',
+                        value: parseInt(row.querySelector('.skill-total-td')?.textContent) || 0
+                    });
+                });
+
+                const packageData = { name: name, stats: stats, status: status, skills: finalSkills };
+                switchDisplayState('home'); applyDataFromServer(packageData);
+                connectAndListenToKP(targetRoomId, packageData);
+            });
+        }
+
+        if (navButtons.home) {
+            navButtons.home.addEventListener('click', () => {
+                if (isAdminMode) { switchDisplayState('admin'); return; }
+                const rawData = sessionStorage.getItem(STORAGE_KEY);
+                if (rawData) {
+                    try {
+                        const state = JSON.parse(rawData);
+                        if (state.mainPage === 'page-home') switchDisplayState('home');
+                        else if (state.mainPage === 'page-stats-skills') switchDisplayState('statsSkills');
+                        else switchDisplayState('name');
+                    } catch(e) { switchDisplayState('name'); }
+                } else { switchDisplayState('name'); }
+            });
+        }
+        if (navButtons.dice) { navButtons.dice.addEventListener('click', () => { if (isCharacterLocked || isAdminMode) switchDisplayState('dice'); }); }
+        if (resetCharBtn) { resetCharBtn.addEventListener('click', () => { if (confirm("データを削除して最初から作り直しますか？")) { sessionStorage.removeItem(STORAGE_KEY); location.reload(); } }); }
+        if (adminCloseBtn) { adminCloseBtn.addEventListener('click', () => { if (confirm("管理画面を閉じるとセッションデータが消去されます。よろしいですか？")) { if (myPeer) myPeer.destroy(); sessionStorage.removeItem(STORAGE_KEY); location.reload(); } }); }
+
+        const countSelect = document.getElementById('dice-count'); const sidesInput = document.getElementById('dice-sides'); const formulaDisplay = document.getElementById('formula-display'); const rollBtn = document.getElementById('roll-btn');
+        function updateFormula() { formulaDisplay.textContent = `${countSelect.value}d${sidesInput.value}`; }
+        if (countSelect) countSelect.addEventListener('change', updateFormula); if (sidesInput) sidesInput.addEventListener('input', updateFormula);
+
+        function addDiceResultToList(mode, name, formula, total, details) {
+            const listId = mode === 'share' ? 'share-results-list' : 'private-results-list';
+            const listEl = document.getElementById(listId);
+            if (!listEl) return;
+
+            const item = document.createElement('div');
+            item.className = 'dice-result-item';
+            
+            const color = mode === 'share' ? '#16a34a' : '#475569';
+            item.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span><strong>[${name}]</strong> ${formula}</span>
+                    <span style="font-size: 1.1rem; font-weight: bold; color: ${color};">${total}</span>
+                </div>
+                <div style="color: #64748b; font-size: 0.75rem; margin-top: 2px;">内訳: ${details}</div>
+            `;
+            listEl.insertBefore(item, listEl.firstChild);
+        }
+
+        if (rollBtn) {
+            rollBtn.addEventListener('click', () => {
+                const x = parseInt(countSelect.value); let y = parseInt(sidesInput.value); const rolls = []; let total = 0;
+                for (let i = 0; i < x; i++) { const roll = Math.floor(Math.random() * y) + 1; rolls.push(roll); total += roll; }
+                
+                const formula = `${x}d${y}`;
+                const details = `[ ${rolls.join(', ')} ]`;
+                const mode = document.querySelector('input[name="dice-mode"]:checked').value;
+
+                if (mode === 'share') {
+                    if (isAdminMode) {
+                        addDiceResultToList('share', myName, formula, total, details);
+                        broadcastToAllPlayers({ type: 'dice_share', name: myName, formula: formula, total: total, details: details });
+                    } else {
+                        if (window.kpConnection && window.kpConnection.open) {
+                            window.kpConnection.send({ type: 'dice_roll', name: myName, formula: formula, total: total, details: details });
+                        } else {
+                            addDiceResultToList('private', myName, formula, total, details + " (※KP未接続のため個人表示)");
+                        }
+                    }
+                } else {
+                    addDiceResultToList('private', myName, formula, total, details);
+                }
+            });
+        }
+
+        loadFromStorage();
+    });
+</script>
+</body>
+</html>
