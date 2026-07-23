@@ -175,14 +175,14 @@
             </div>
 
             <div class="stats-grid">
-                <div class="stat-box"><span>STR</span><input type="number" id="input-str" class="input-stat-value" value="50" min="15" max="99"></div>
-                <div class="stat-box"><span>CON</span><input type="number" id="input-con" class="input-stat-value" value="50" min="15" max="99"></div>
-                <div class="stat-box"><span>POW</span><input type="number" id="input-pow" class="input-stat-value" value="50" min="15" max="99"></div>
-                <div class="stat-box"><span>DEX</span><input type="number" id="input-dex" class="input-stat-value" value="50" min="15" max="99"></div>
-                <div class="stat-box"><span>APP</span><input type="number" id="input-app" class="input-stat-value" value="50" min="15" max="99"></div>
-                <div class="stat-box"><span>SIZ</span><input type="number" id="input-siz" class="input-stat-value" value="60" min="15" max="99"></div>
-                <div class="stat-box"><span>INT</span><input type="number" id="input-int" class="input-stat-value" value="60" min="15" max="99"></div>
-                <div class="stat-box"><span>EDU</span><input type="number" id="input-edu" class="input-stat-value" value="60" min="15" max="99"></div>
+                <div class="stat-box"><span>STR</span><input type="number" id="input-str" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>CON</span><input type="number" id="input-con" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>POW</span><input type="number" id="input-pow" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>DEX</span><input type="number" id="input-dex" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>APP</span><input type="number" id="input-app" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>SIZ</span><input type="number" id="input-siz" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>INT</span><input type="number" id="input-int" class="input-stat-value" value="10" min="1" max="99"></div>
+                <div class="stat-box"><span>EDU</span><input type="number" id="input-edu" class="input-stat-value" value="10" min="1" max="99"></div>
             </div>
 
             <h3 style="margin-top: 20px;">技能ポイント割り振り</h3>
@@ -473,7 +473,6 @@
 
         // --- PL (プレイヤー) 通信処理 ---
         function connectAndListenToKP(roomId, charData) {
-            if (myPeer) { try { myPeer.destroy(); } catch(e){} }
             myPeer = new Peer();
             
             myPeer.on('error', (err) => {
@@ -481,6 +480,7 @@
                 const errMsg = `❌ 通信エラー (${err.type}): KPが部屋を開いているか確認してください。`;
                 if (targetErrorArea) {
                     targetErrorArea.textContent = errMsg; targetErrorArea.style.display = 'block';
+                    targetErrorArea.style.backgroundColor = '#fef2f2'; targetErrorArea.style.borderColor = '#fee2e2'; targetErrorArea.style.color = '#ef4444';
                 }
                 if (connectionStatusMsg) {
                     connectionStatusMsg.textContent = errMsg; connectionStatusMsg.style.display = 'block';
@@ -510,6 +510,7 @@
                     }
                 });
 
+                /* 🔗 KPがリロードしても自動で再接続を試みる仕組み */
                 conn.on('close', () => {
                     if (isCharacterLocked) {
                         if (connectionStatusMsg) {
@@ -532,10 +533,8 @@
                 <span><strong>APP:</strong> ${charData.stats.app}</span><span><strong>SIZ:</strong> ${charData.stats.siz}</span>
                 <span><strong>INT:</strong> ${charData.stats.int}</span><span><strong>EDU:</strong> ${charData.stats.edu}</span>`;
             document.getElementById('display-status').innerHTML = `
-                <span style="color:#ef4444;"><strong>HP:</strong> ${charData.status.hp}</span>
-                <span style="color:#3b82f6;"><strong>MP:</strong> ${charData.status.mp}</span>
-                <span style="color:#10b981;"><strong>SAN:</strong> ${charData.status.san}</span>
-                <span style="color:#8b5cf6;"><strong>幸運:</strong> ${charData.status.fortune}</span>`;
+                <span style="color:#ef4444;"><strong>HP:</strong> ${charData.status.hp}</span><span style="color:#3b82f6;"><strong>MP:</strong> ${charData.status.mp}</span>
+                <span style="color:#10b981;"><strong>SAN:</strong> ${charData.status.san}</span><span style="color:#8b5cf6;"><strong>幸運:</strong> ${charData.status.fortune}</span>`;
 
             const displayFinalSkills = document.getElementById('display-final-skills');
             displayFinalSkills.innerHTML = '';
@@ -564,21 +563,23 @@
             const state = {
                 page: currentMainPage, mainPage: currentMainPage, name: inputName.value, roomId: inputRoomId.value, isLocked: false,
                 stats: {
-                    str: document.getElementById('input-str')?.value || 50, con: document.getElementById('input-con')?.value || 50,
-                    pow: document.getElementById('input-pow')?.value || 50, dex: document.getElementById('input-dex')?.value || 50,
-                    app: document.getElementById('input-app')?.value || 50, siz: document.getElementById('input-siz')?.value || 60,
-                    int: document.getElementById('input-int')?.value || 60, edu: document.getElementById('input-edu')?.value || 60
+                    str: document.getElementById('input-str')?.value || 10, con: document.getElementById('input-con')?.value || 10,
+                    pow: document.getElementById('input-pow')?.value || 10, dex: document.getElementById('input-dex')?.value || 10,
+                    app: document.getElementById('input-app')?.value || 10, siz: document.getElementById('input-siz')?.value || 10,
+                    int: document.getElementById('input-int')?.value || 10, edu: document.getElementById('input-edu')?.value || 10
                 }, skills: skillData
             };
             sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         }
 
+        /* 🔗 KPモード復元処理 */
         function loadFromStorage() {
             const rawData = sessionStorage.getItem(STORAGE_KEY); 
             if (!rawData) { isCharacterLocked = false; updateNavVisibility(); switchDisplayState('name'); return; }
             try {
                 const state = JSON.parse(rawData);
 
+                // KP（管理モード）の復元処理
                 if (state.isAdminMode) {
                     isAdminMode = true;
                     myName = "KP";
@@ -595,10 +596,13 @@
                         Object.keys(remotePlayersData).forEach(pName => renderPlayerCardOnAdmin(pName));
                     }
                     renderHistoryList();
+
+                    // 同じ部屋番号でKPサーバーを再起動
                     startAdminServer(state.roomId);
                     return;
                 }
 
+                // プレイヤーの復元処理
                 if (inputName && state.name) { inputName.value = state.name; charCounter.textContent = `${state.name.length} / ${MAX_LENGTH}`; }
                 if (inputRoomId && state.roomId) inputRoomId.value = state.roomId;
                 if (statsTitleName && state.name) statsTitleName.textContent = state.name;
@@ -654,12 +658,11 @@
 
         function triggerErrorAnimation() { if (mainContainer) { mainContainer.classList.remove('warning-animation'); void mainContainer.offsetWidth; mainContainer.classList.add('warning-animation'); } }
 
-        // 次へ進む (KP判定 ＆ 部屋番号渡し修正済み)
+        /* 唯一の修正点: KP起動時に部屋番号を取得して startAdminServer に渡す処理を追加 */
         toStatsBtn.addEventListener('click', async () => {
             const name = inputName.value.trim();
             const hashedInput = await calcSHA256(name);
             
-            // KPとして起動
             if (hashedInput === ADMIN_HASH) {
                 const roomId = inputRoomId.value.trim();
                 if (roomId === "") {
@@ -677,7 +680,7 @@
                 document.getElementById('nav-btn-home').textContent = "⚙️ 管理画面";
                 updateNavVisibility();
                 switchDisplayState('admin'); 
-                startAdminServer(roomId); // 部屋番号を渡して起動！
+                startAdminServer(roomId);
                 return;
             }
 
@@ -747,17 +750,15 @@
 
                 const name = inputName.value.trim();
                 const stats = {
-                    str: parseInt(document.getElementById('input-str')?.value) || 50, con: parseInt(document.getElementById('input-con')?.value) || 50,
-                    pow: parseInt(document.getElementById('input-pow')?.value) || 50, dex: parseInt(document.getElementById('input-dex')?.value) || 50,
-                    app: parseInt(document.getElementById('input-app')?.value) || 50, siz: parseInt(document.getElementById('input-siz')?.value) || 60,
-                    int: parseInt(document.getElementById('input-int')?.value) || 60, edu: parseInt(document.getElementById('input-edu')?.value) || 60
+                    str: parseInt(document.getElementById('input-str')?.value) || 10, con: parseInt(document.getElementById('input-con')?.value) || 10,
+                    pow: parseInt(document.getElementById('input-pow')?.value) || 10, dex: parseInt(document.getElementById('input-dex')?.value) || 10,
+                    app: parseInt(document.getElementById('input-app')?.value) || 10, siz: parseInt(document.getElementById('input-siz')?.value) || 10,
+                    int: parseInt(document.getElementById('input-int')?.value) || 10, edu: parseInt(document.getElementById('input-edu')?.value) || 10
                 };
 
                 const status = {
-                    hp: Math.ceil((stats.con + stats.siz) / 10),
-                    mp: Math.floor(stats.pow / 5),
-                    san: stats.pow,
-                    fortune: stats.pow
+                    hp: Math.ceil((stats.con + stats.siz) / 2),
+                    mp: stats.pow, san: stats.pow * 5, fortune: stats.pow * 5
                 };
 
                 const finalSkills = [];
